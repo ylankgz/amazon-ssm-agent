@@ -1,4 +1,4 @@
-Latest
+2.3.0.0
 ===============
 - Bug fix for on-premises instance registration in CN region
 
