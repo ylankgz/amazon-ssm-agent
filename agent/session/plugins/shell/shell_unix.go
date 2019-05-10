@@ -29,6 +29,7 @@ import (
 	agentContracts "github.com/aws/amazon-ssm-agent/agent/contracts"
 	"github.com/aws/amazon-ssm-agent/agent/log"
 	mgsConfig "github.com/aws/amazon-ssm-agent/agent/session/config"
+	"github.com/aws/amazon-ssm-agent/agent/session/utility"
 	"github.com/kr/pty"
 )
 
@@ -36,6 +37,8 @@ var ptyFile *os.File
 
 const (
 	termEnvVariable       = "TERM=xterm-256color"
+	langEnvVariable       = "LANG=C.UTF-8"
+	langEnvVariableKey    = "LANG"
 	startRecordSessionCmd = "script"
 	newLineCharacter      = "\n"
 	screenBufferSizeCmd   = "screen -h %d%s"
@@ -54,7 +57,7 @@ func StartPty(log log.T, runAsSsmUser bool, shellCmd string) (stdin *os.File, st
 	if strings.TrimSpace(shellCmd) == "" {
 		cmd = exec.Command("sh")
 	} else {
-		commandArgs := append(ShellPluginCommandArgs, shellCmd)
+		commandArgs := append(utility.ShellPluginCommandArgs, shellCmd)
 		cmd = exec.Command("sh", commandArgs...)
 	}
 
@@ -65,8 +68,19 @@ func StartPty(log log.T, runAsSsmUser bool, shellCmd string) (stdin *os.File, st
 		homeEnvVariable,
 	)
 
+	//If LANG environment variable is not set, shell defaults to POSIX which can contain 256 single-byte characters.
+	//Setting C.UTF-8 as default LANG environment variable as Session Manager supports UTF-8 encoding only.
+	langEnvVariableValue := os.Getenv(langEnvVariableKey)
+	if langEnvVariableValue == "" {
+		cmd.Env = append(cmd.Env, langEnvVariable)
+	}
+
 	// Get the uid and gid of the runas user.
 	if runAsSsmUser {
+		// Create ssm-user before starting a session.
+		u := &utility.SessionUtil{}
+		u.CreateLocalAdminUser(log)
+
 		uid, gid, err := getUserAndGroupIdCall(log)
 		if err != nil {
 			return nil, nil, err
@@ -108,8 +122,8 @@ func SetSize(log log.T, ws_col, ws_row uint32) (err error) {
 
 //getUserAndGroupId returns the uid and gid of the runas user.
 func getUserAndGroupId(log log.T) (uid int, gid int, err error) {
-	shellCmdArgs := append(ShellPluginCommandArgs, fmt.Sprintf("id -u %s", appconfig.DefaultRunAsUserName))
-	cmd := exec.Command(ShellPluginCommandName, shellCmdArgs...)
+	shellCmdArgs := append(utility.ShellPluginCommandArgs, fmt.Sprintf("id -u %s", appconfig.DefaultRunAsUserName))
+	cmd := exec.Command(utility.ShellPluginCommandName, shellCmdArgs...)
 	out, err := cmd.Output()
 	if err != nil {
 		log.Errorf("Failed retrieve uid for %s: %v", appconfig.DefaultRunAsUserName, err)
@@ -121,8 +135,8 @@ func getUserAndGroupId(log log.T) (uid int, gid int, err error) {
 		log.Errorf("%s not found: %v", appconfig.DefaultRunAsUserName, err)
 	}
 
-	shellCmdArgs = append(ShellPluginCommandArgs, fmt.Sprintf("id -g %s", appconfig.DefaultRunAsUserName))
-	cmd = exec.Command(ShellPluginCommandName, shellCmdArgs...)
+	shellCmdArgs = append(utility.ShellPluginCommandArgs, fmt.Sprintf("id -g %s", appconfig.DefaultRunAsUserName))
+	cmd = exec.Command(utility.ShellPluginCommandName, shellCmdArgs...)
 	out, err = cmd.Output()
 	if err != nil {
 		log.Errorf("Failed retrieve gid for %s: %v", appconfig.DefaultRunAsUserName, err)
